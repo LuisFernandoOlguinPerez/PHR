@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHR</title>
+      <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/util.js"></script>
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/layer.js"></script>
+
+    <!-- ENGINE -->
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/engine/Graphics.js"></script>
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/engine/Audio.js"></script>
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/engine/Renderer.js"></script>
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/engine/ParalaxBackground.js"></script>
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/engine/SpriteSheet.js"></script>
+
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/engine/entities/Entity.js"></script>
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/engine/entities/Obstacles.js"></script>
+    <script src="https://luis72353.github.io/pumpkin-head-runner/js%20modules/engine/entities/Player.js"></script>
+    <script>
+let canvas,
+    context,
+    graphics,
+    backgrounds,
+    renderer,
+    player,
+    obstacles = [],
+    attemps = 0,
+    bestScore = 0,
+    currentScore = 0,
+    scoreMultiplier = 0.1,
+    screamAU,
+    auBG;
+
+let playerSprites = {
+    idle: null,
+    dead: null,
+    run: null,
+    jump: null
+}
+
+
+async function main() {
+    [canvas, context] = createLayer(innerWidth, innerHeight);
+    $("#app").appendChild(canvas);
+
+    graphics = new Graphics({
+        stone: "https://luis72353.github.io/pumpkin-head-runner/img/Stone.png",
+        crate: "https://luis72353.github.io/pumpkin-head-runner/img/Crate.png",
+        ground: "https://luis72353.github.io/pumpkin-head-runner/img/14.png",
+        trunk: "https://luis72353.github.io/pumpkin-head-runner/img/Tree_1.png",
+        bgDecor: "https://luis72353.github.io/pumpkin-head-runner/img/BG_Decor2.png",
+        foreground: "https://luis72353.github.io/pumpkin-head-runner/img/Foreground2.png",
+        middleDecor: "https://luis72353.github.io/pumpkin-head-runner/img/Middle_Decor2.png",
+        sky: "https://luis72353.github.io/pumpkin-head-runner/img/Sky2.png",
+        player_idle: "https://luis72353.github.io/pumpkin-head-runner/img/idle2.png",
+        player_run: "https://luis72353.github.io/pumpkin-head-runner/img/Run2.png",
+        player_jump: "https://luis72353.github.io/pumpkin-head-runner/img/Jump2.png",
+        player_dead: "https://luis72353.github.io/pumpkin-head-runner/img/Dead2.png"
+
+    }, context);
+
+    await graphics.load();
+
+
+    backgrounds = new ParalaxBackground(graphics, innerWidth, innerHeight);
+    backgrounds.speed = 0;
+
+
+    backgrounds.add("sky", {
+        vel: 0,
+        x: 0,
+        y: 0
+    });
+    backgrounds.add("bgDecor", {
+        vel: 0.02,
+        x: 0,
+        y: 0
+    });
+    backgrounds.add("middleDecor", {
+        vel: 0.04,
+        x: 0,
+        y: 0
+    });
+    backgrounds.add("foreground", {
+        vel: 0.07,
+        x: 0,
+        y: 0
+    });
+    backgrounds.add("ground", {
+        vel: 0.12,
+        width: 88,
+        height: 53,
+        x: 0,
+        y: innerHeight - 40
+    });
+    context.fillStyle = "#fff";
+    context.font = "20px sans-serif"
+
+
+    playerSprites = {
+        idle: new SpriteSheet(graphics.get("player_idle")).defineByColumns(10),
+        dead: new SpriteSheet(graphics.get("player_dead")).defineByColumns(10),
+        run: new SpriteSheet(graphics.get("player_run")).defineByColumns(8),
+        jump: new SpriteSheet(graphics.get("player_jump")).defineByColumns(10)
+    }
+
+
+    renderer = new Renderer(dt => {
+        backgrounds.update(context, dt);
+
+        player.update(dt);
+        player.render(context);
+
+        for (let i = 0; i < obstacles.length; i++) {
+            const obstacle = obstacles[i];
+            obstacle.render(context);
+            obstacle.update(dt);
+            if (obstacle.right < 0) {
+                obstacles.splice(i, 1);
+                createObstacle(random(obstacles[obstacles.length - 1].size.x + 200, obstacles[obstacles.length - 1].size.x + 400));
+            }
+            if (player.right - 30 > obstacle.left &&
+                player.left + 10 < obstacle.right &&
+                player.bottom - 30 > obstacle.top &&
+                player.top + 20 < obstacle.bottom) {
+
+                player.changeState("dead");
+            }
+            if (player.isDead) {
+                gameOver();
+            }
+        }
+        if(((currentScore | 0 ) % 100 ==  0) && currentScore > 99){
+            backgrounds.speed += 0.02;
+            updateObstaclesSpeed();
+        }
+        currentScore += scoreMultiplier * backgrounds.speed;
+        context.fillText(`score: ${currentScore | 0}`, 30, 30)
+    }, 0);
+
+    auBG = await loadAudio("https://luis72353.github.io/pumpkin-head-runner/audio/En la gruta del rey2.mp3");
+    screamAU = await loadAudio("https://luis72353.github.io/pumpkin-head-runner/audio/grito.mp3");
+
+
+
+    initGame();
+    $("#start-btn").onclick = async () => {
+        initGame();
+        backgrounds.speed = 2;
+        player.changeState("run");
+        $("#home").style.display = "none";
+        auBG.play();
+        auBG.loop = true;
+        updateObstaclesSpeed();
+        canvas.onclick = () => {
+            if (player.jumps < 2) player.jump();
+        }
+        obstacles = [];
+        await howToPlay();
+        createObstaclesChain();
+
+    }
+
+
+    renderer.start();
+    $("#loading").remove();
+    renderer.minFPS = 5;
+    alert("Por favor, usa auriculares para una mejor experiencia");
+}
+
+function updateDashboard() {
+    if (currentScore >= bestScore) {
+        bestScore = currentScore;
+    }
+    $("#bestScore").innerHTML = bestScore | 0;
+    $("#currentScore").innerHTML = currentScore | 0;
+    $("#attemps").innerHTML = attemps;
+}
+
+async function gameOver() {
+    ++attemps;
+    renderer.pause();
+    player.changeState("idle");
+    player.pos.x = 0;
+    backgrounds.speed = 0;
+    updateObstaclesSpeed();
+    updateDashboard();
+    if (attemps == 2) {
+        await message("¡¡Ten cuidado!!", 2000);
+
+        await message("Hay algo extraño por aquí !!", 2000);
+    } else if ((Math.floor(Math.random() * 3) / 1) % 3 == 0) {
+        auBG.pause();
+        $("#terror").style.display = "flex";
+        screamAU.play();
+        await sleep(1000)
+        $("#terror").style.display = "none";
+        auBG.play();
+        await message("Sigamos jugando;)",2000);
+    }
+    $("#home").style.display = "block";
+}
+
+function createObstaclesChain() {
+    obstacles = [];
+    for (let i = 0; i < 4; ++i) {
+        createObstacle(random(i * 400, i * 200 + 400));
+    }
+
+}
+
+function initGame() {
+    createObstaclesChain();
+    //
+    player = new Player();
+    player.sprites = playerSprites;
+    player.changeState("idle");
+    currentScore = 0;
+    renderer.resume();
+}
+
+function createObstacle(distance = 0) {
+    const sprite = graphics.get(["stone", "crate", "trunk"][random(0, 2)]);
+    const obstacle = new Obstacle(new Vector(innerWidth + sprite.width + distance, innerHeight - 60));
+    obstacle.vel.x = -backgrounds.backgrounds.get("ground").vel * backgrounds.speed;
+    obstacle.setSprites(sprite);
+    obstacles.push(obstacle);
+}
+
+function updateObstaclesSpeed() {
+    for (let obstacle of obstacles) {
+        obstacle.vel.x = obstacle.vel.x = -backgrounds.backgrounds.get("ground").vel * backgrounds.speed;
+    }
+}
+
+
+async function message(msg, duration) {
+    $("#message").innerHTML = msg;
+    $("#message-container").classList.add("active");
+    await sleep(duration);
+    $("#message-container").classList.remove("active");
+    await sleep(1000);
+}
+
+async function howToPlay() {
+    if (attemps != 0) return;
+    scoreMultiplier = 0;
+    await message("Hey, soy tu asistente.", 4000);
+    await message("Toca la pantalla para saltar", 2000);
+    await message("Puedes saltar dos veces al mismo tiempo.", 3000);
+    await message("Salta los obstáculos", 2000);
+    await message("Vamos a jugar", 1000);
+    await message("No olvides no morir;)", 3000);
+    scoreMultiplier = 0.1;
+}
+
+window.onload=main;
+
+    </script>
+    <style>
+
+* {
+    margin: 0;
+    padding: 0;
+    user-select:none;
+}
+
+body,
+html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    background: #222;
+    color: #fff;
+    font-family: sans-serif;
+}
+
+section {
+    width: 100vw;
+    height: 100vh;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+footer {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    color: #ccc;
+    pointer-events: none;
+    font-size: 13px;
+}
+
+@font-face {
+    src: url('https://luis72353.github.io/pumpkin-head-runner/fonts/pumpkin2.ttf');
+    font-family: 'pumpkin';
+}
+
+@font-face {
+    src: url('https://luis72353.github.io/pumpkin-head-runner/fonts/pumpkin.ttf');
+    font-family: 'pumpkin2';
+}
+
+#message-container {
+    width: 100%;
+    bottom: 0;
+    left: 0;
+    height: 0;
+    position: absolute;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1;
+    transition: 0.5s;
+    color: #fff;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+#message-container.active {
+    height: 60px;
+}
+
+#terror {
+    background: #060709;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    display: none;
+}
+
+#home>h1 {
+    color: #FF9800;
+    font-family: 'pumpkin2';
+    font-size: 40px;
+    text-align: center;
+    padding: 10px 0;
+
+    text-shadow: 0 0 10px black, 0 0 20px black, 0 0 40px black;
+
+}
+
+#start-btn {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 30px;
+    color: #fff;
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 100%;
+    height: 30vh;
+    text-shadow: 0 0 10px #ff9800, 0 0 20px #ff9800;
+}
+
+.game-board {
+    line-height: 2;
+    margin-left: 25px;
+    margin-top: 10px;
+}
+
+.game-board>table {
+    border-collapse: collapse;
+}
+
+tr>td {
+    border-bottom: 1px solid #ff5722;
+}
+
+td:last-child {
+    text-align: end;
+    padding: 0 20px;
+}
+
+#loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'pumpkin';
+    color: #FF9800;
+    font-size: 50px;
+    z-index: 1;
+    background: #111;
+}
+
+#loading>span {
+    animation: loading 1s infinite alternate;
+}
+
+#loading>:nth-child(2n) {
+    animation-delay: 0.2s;
+}
+
+#loading>:nth-child(3n) {
+    animation-delay: 0.4s;
+}
+
+@keyframes loading {
+    from {
+        transform: translateY(0)
+    }
+
+    to {
+        transform: translateY(-30px)
+    }
+}
+
+.right-menu {
+    position: absolute;
+    top: 50px;
+    right: 0;
+}
+
+.right-menu>div {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: red;
+    margin: 20px;
+}
+    </style>
+</head>
+
+<body>
+    <main id="app">
+        <div id="terror">
+            <img src="https://luis72353.github.io/pumpkin-head-runner/img/terror.jpg" alt="terror">
+        </div>
+        <div id="message-container">
+            <p id="message"></p>
+        </div>
+        <section id="loading">
+            <span>L</span>
+            <span>O</span>
+            <span>A</span>
+            <span>D</span>
+            <span>I</span>
+            <span>N</span>
+            <span>G</span>
+        </section>
+        <section id="home">
+            <h1>PHR</h1>
+            <div class="game-board">
+                <table>
+                    <tr>
+                        <td>Intentos</td>
+                        <td id="attemps">0</td>
+                    </tr>
+                    <tr>
+                        <td>Mejor Score</td>
+                        <td id="bestScore">0</td>
+                    </tr>
+                    <tr>
+                        <td>Score actual</td>
+                        <td id="currentScore">0</td>
+                    </tr>
+                </table>
+            </div>
+            <button id="start-btn">JUGAR</button>
+
+            <footer>
+                <p>&copy; Luis Olguin 2021, v1.1.0</p>
+            </footer>
+        </section>
+    </main>
+    
+</body>
+
+</html>
